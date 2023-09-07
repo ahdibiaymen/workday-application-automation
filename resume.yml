@@ -1,0 +1,19 @@
+account:
+  email: aymenmysterio619@gmail.com
+  password: $Abcd1234
+
+my-information:
+  source: Other
+  previous-work: False
+  country: United States of America
+  first-name: test
+  last-name: test
+  address-line: test
+  city: test
+  state: test
+  zip: test
+  phone-device-type: test
+  phone-code: test
+  phone-number: test
+  phone-extension: test
+
