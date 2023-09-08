@@ -4,16 +4,110 @@ account:
 
 my-information:
   source: Other
-  previous-work: False
+  previous-work: false
   country: United States of America
   first-name: test
   last-name: test
-  address-line: test
-  city: test
-  state: test
-  zip: test
-  phone-device-type: test
-  phone-code: test
-  phone-number: test
-  phone-extension: test
+  address-line: Somewhere
+  city: Sterling
+  state: Virginia
+  zip: 20164
+  phone-device-type: Telephone
+  phone-code-country: +33
+  phone-number: 0612345678
+  phone-extension:
+
+my-experience:
+  work-experiences:
+    - work1:
+        job-title: Software engineer
+        company: Orange Cyberdefense
+        location: Paris, France
+        current-work: true
+        from: 09/2022
+        to: 09/2023
+        description: |
+          - Maintained "Phishing Initiative" platform by fixing bugs.
+          - Migrated the platform from a monolithic application to a micro-services architecture.
+          - Developed secured and scalable APIs using Flask-RestX for the platform.
+          - Developed automated tests (Unit ,Integration ,E2E) for higher reliability and security using Pytest.
+          - Created sandboxed web scrappers using Selenium and Docker to snapshot phishing websites in an isolated
+          - environment.
+          - Created Automated background workers using Celery to handle application tasks asynchronously.
+          - Identified and patched RCE vulnerability and security misconfiguration on the plateform.
+          - Participated in CI/CD process.
+          - Code review process through internal Gitlab.
+    - work2:
+        job-title: Fullstack web developer
+        company: Kalendes
+        location: Paris, France
+        current-work: false
+        from: 03/2022
+        to: 09/2023
+        description: |
+          - Improved the functional aspects for the end users to easily find the beauty professional of their choice.
+          - Participated in the corrective and evolutionary maintenance of the internal web application for Kalendes HelpDesk team to allow them make calls over IP and handle clients with ease.
+          - Worked on marketing issues for beauty professionals to allow them increase their sales by using Facebook API and Google business API to automate offers posting and handle all social media accounts statistics in one dashboard.
+          - Redesigned and implemented new UI screens using HTML, CSS and AngularJS.
+          - Developed new API endpoints using NodeJS.
+          - Maintained MySQL database of customers and beauty professionals.
+    - work3:
+        job-title: Python developer
+        company: Cerist
+        location: Algiers, Algeria
+        current-work: false
+        from: 01/2021
+        to: 07/2021
+        description: |
+          - Created machine learning models to detect credit cards frauds on e-commerce environments using Python
+          and Sklearn Library.
+          - Applied unbalanced dataset algorithms to balance datasets using SMOTE super-sampling to improve the
+          results of the learning algorithms.
+          - Trained and combined different machine learning algorithms supervised and non-supervised to reach the
+          optimal fraud detection possible.
+
+  education-experiences:
+    - education1:
+        university: EPSI
+        degree: Masters
+        field-of-study: computer and information Science
+        gpa:
+        from: 2021
+        to: 2023
+    - education2:
+        university: USTHB
+        degree: Masters
+        field-of-study: computer and information Science
+        gpa:
+        from: 2019
+        to: 2021
+    - education3:
+        university: USTHB
+        degree: Bachelors
+        field-of-study: computer and information Science
+        gpa:
+        from: 2016
+        to: 2019
+  languages:
+    - language1:
+        language: English
+        fluent: true
+        comprehension: Advanced
+        overall: Advanced
+        reading: Advanced
+        speaking: Advanced
+        writing: Advanced
+    - language2:
+        language: French
+        fluent: true
+        comprehension: Advanced
+        overall: Advanced
+        reading: Advanced
+        speaking: Advanced
+        writing: Advanced
+  resume: /tmp/hello.png
+  websites:
+    - https://www.linkedin.com/in/aimene-ahdibi-159b7a1a1/
+    - https://github.com/ahdibiaymen/
+
 
