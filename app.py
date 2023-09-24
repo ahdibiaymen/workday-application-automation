@@ -4,52 +4,63 @@ import selenium.common.exceptions as selenium_exceptions
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver import Keys
+from selenium.webdriver.firefox.service import Service as FirefoxService
+from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from utils import check_generator_is_empty, check_element_text_is_empty
+from utils import check_element_text_is_empty
 import yaml
+
+from webdrivers_installer import install_web_driver
 
 
 class PageStep:
-    def __init__(self, action, **options):
+    def __init__(self, action, params, options=None):
         self.action = action
-        self.options = options
-
-    def check_action_validity(self):
-        if self.action == "LOCATE_AND_FILL":
-
-            pass
-        elif self.action == "LOCATE_AND_CLICK":
-            pass
-        elif self.action == "LOCATE_DROPDOWN_AND_FILL":
-            pass
-        elif self.action == "LOCATE_AND_UPLOAD":
-            pass
-        elif self.action == "LOCATE_AND_DRAG_DROP":
-            pass
+        self.params = params
+        if options is None:
+            self.options = {}
         else:
-            raise RuntimeError(f"Unknown instruction: {self.action} \n"
-                               f" called with params : {self.params}")
-
+            self.options = options
 
 
 class WorkdayAutofill:
     def __init__(self, application_link, resume_path):
         self.application_link = application_link
         self.resume_path = resume_path
-        self.driver = webdriver.Firefox()
-        self.resume_data = None
+        self.driver = WorkdayAutofill.create_webdriver("chrome")
+        self.resume_data = self.load_resume()
         self.current_url = None
         self.ELEMENT_WAITING_TIMEOUT = 5
         self.IMPLICIT_FILLING_WAIT = 3
 
-        self.load_resume()
+    @classmethod
+    def create_webdriver(cls, browser_name):
+        try:
+            if browser_name.lower() == "firefox":
+                driver = webdriver.Firefox()
+            elif browser_name.lower() == "chrome":
+                driver = webdriver.Chrome()
+            else:
+                raise RuntimeError(f"{browser_name} is not supported !")
+        except selenium_exceptions.WebDriverException:
+            # trying to install the web driver if not installed in the system
+            if browser_name.lower() == "firefox":
+                web_driver_path = install_web_driver(requested_browser=browser_name)
+                driver = webdriver.Firefox(service=FirefoxService(executable_path=web_driver_path))
+            elif browser_name.lower() == "chrome":
+                web_driver_path = install_web_driver(requested_browser=browser_name)
+                driver = webdriver.Chrome(service=ChromeService(executable_path=web_driver_path))
+            else:
+                raise RuntimeError(f"{browser_name} is not supported !")
+        else:
+            return driver
 
     def load_resume(self):
         with open(self.resume_path) as resume:
             try:
-                self.resume_data = yaml.safe_load(resume)
+                return yaml.safe_load(resume)
             except yaml.YAMLError as e:
                 print(e)
 
@@ -77,29 +88,29 @@ class WorkdayAutofill:
             raise ValueError("Something went wrong while parsing your resume.yml LANGUAGES"
                              f" -> please review the languages order !")
 
-    def locate_and_fill(self, element_xpath, input_data, press_enter=False, only_if_empty=False, required=True):
+    def locate_and_fill(self, element_xpath, input_data, kwoptions):
         try:
             element = WebDriverWait(self.driver, self.ELEMENT_WAITING_TIMEOUT).until(
                 EC.presence_of_element_located((By.XPATH, element_xpath)))
         except (selenium_exceptions.NoSuchElementException, selenium_exceptions.TimeoutException):
-            if not required:
+            if not kwoptions.get("required"):
                 return
             raise RuntimeError(
                 f"Cannot locate element '{element_xpath}' in the following page : {self.driver.current_url}"
             )
         else:
-            if only_if_empty and not check_element_text_is_empty(element):
+            if kwoptions.get("only_if_empty") and not check_element_text_is_empty(element):
                 # quit if the element is already filled
                 return
             if input_data:
                 if "input" in element_xpath:
-                    element.send_keys(Keys.CONTROL + "a")
-                    element.send_keys(Keys.DELETE)
+                    self.driver.execute_script(
+                        'arguments[0].value="";', element)
                 element.send_keys(input_data)
-            if press_enter:
+            if kwoptions.get("press_enter"):
                 element.send_keys(Keys.ENTER)
 
-    def locate_dropdown_and_fill(self, element_xpath, select_value, value_is_pattern=False):
+    def locate_dropdown_and_fill(self, element_xpath, input_data, kwoptions):
         try:
             element = WebDriverWait(self.driver, self.ELEMENT_WAITING_TIMEOUT).until(
                 EC.presence_of_element_located((By.XPATH, element_xpath)))
@@ -109,21 +120,21 @@ class WorkdayAutofill:
             )
         else:
             self.driver.execute_script("arguments[0].click();", element)
-            element.send_keys(select_value)
-            if value_is_pattern:
-                select_xpath = f'//div[@data-automation-widget="wd-popup"]//div/ul/li/div[contains(text(),"{select_value}")]'
+            element.send_keys(input_data)
+            if kwoptions.get("value_is_pattern"):
+                select_xpath = f'//div[contains(text(),"{input_data}")'
             else:
-                select_xpath = f'//div[@data-automation-widget="wd-popup"]//div/ul/li/div[text()="{select_value}"]'
+                select_xpath = f'//div[text()="{input_data}"]'
             try:
                 choice = WebDriverWait(self.driver, self.ELEMENT_WAITING_TIMEOUT).until(
                     EC.presence_of_element_located((By.XPATH, select_xpath)))
-            except Exception:
+            except (selenium_exceptions.NoSuchElementException, selenium_exceptions.TimeoutException):
                 raise RuntimeError(
-                    f"Cannot locate option: >'{select_value}'< in the following drop down : {element_xpath}"
+                    f"Cannot locate option: >'{input_data}'< in the following drop down : {element_xpath}"
                     " Check your resume data"
                 )
             else:
-                choice.click()
+                self.driver.execute_script("arguments[0].click();", choice)
 
     def locate_and_click(self, button_xpath):
         try:
@@ -145,9 +156,7 @@ class WorkdayAutofill:
                 f"Cannot locate button '{button_xpath}' in the following page : {self.driver.current_url}"
             )
         else:
-            # element.send_keys(Keys.ENTER)
             element.send_keys(file_location)
-            # element.send_keys(Keys.ENTER)
 
     def locate_and_drag_drop(self, element1_xpath, element2_xpath):
         try:
@@ -165,34 +174,43 @@ class WorkdayAutofill:
             action.drag_and_drop(element1, element2).perform()
 
     def execute_instructions(self, instructions):
-        for inst in instructions:
-            action = inst.action
-            params = inst.options
-            if action == "LOCATE_AND_FILL":
-                self.locate_and_fill(**params)
-            elif action == "LOCATE_AND_CLICK":
-                self.locate_and_click(**params)
-            elif action == "LOCATE_DROPDOWN_AND_FILL":
-                self.locate_dropdown_and_fill(**params)
-            elif action == "LOCATE_AND_UPLOAD":
-                self.locate_and_upload(**params)
-            elif action == "LOCATE_AND_DRAG_DROP":
-                self.locate_and_drag_drop(**params)
+        for page_step in instructions:
+
+            if page_step.action == "LOCATE_AND_FILL":
+                self.locate_and_fill(*page_step.params, page_step.options)
+            elif page_step.action == "LOCATE_AND_CLICK":
+                self.locate_and_click(*page_step.params)
+            elif page_step.action == "LOCATE_DROPDOWN_AND_FILL":
+                self.locate_dropdown_and_fill(*page_step.params, page_step.options)
+            elif page_step.action == "LOCATE_AND_UPLOAD":
+                self.locate_and_upload(*page_step.params, page_step.options)
+            elif page_step.action == "LOCATE_AND_DRAG_DROP":
+                self.locate_and_drag_drop(*page_step.params, page_step.options)
             else:
-                raise RuntimeError(f"Unknown instruction: {action} \n"
-                                   f" called with params : {params}")
+                raise RuntimeError(f"Unknown instruction: {page_step.action} \n"
+                                   f" called with params : {page_step.params} \n "
+                                   f"and options : {page_step.options} ")
 
     def login(self, email, password):
         email_xpath = '//text()[contains(.,"Email Address")]/following::input[1]'
-        password_xpath = '//text()[contains(.,"Password")]/following::input[1]'
-        submit_xpath = '//button[contains(text(),"Sign In")]'
-        # locate email input & fill
-        self.locate_and_fill(email_xpath, email)
-        # locate password input & fill
-        self.locate_and_fill(password_xpath, password)
+        password_xpath = '//text()[contains(.,"Password")]/following::input[@data-automation-id="password"][1]'
+        submit_xpath = '//div[contains(@aria-label,"Sign In")]'
+
+        self.execute_instructions([
+            # locate email input & fill
+            PageStep(action="LOCATE_AND_FILL",
+                     params=[email_xpath, email]),
+            # locate password input & fill
+            PageStep(action="LOCATE_AND_FILL",
+                     params=[password_xpath, password])
+        ])
+
         # submit
         time.sleep(2)
-        self.locate_and_click(submit_xpath)
+        self.execute_instructions([
+            PageStep(action="LOCATE_AND_CLICK",
+                     params=[submit_xpath])
+        ])
 
     def fill_my_information_page(self):
         # Previous work
@@ -203,232 +221,285 @@ class WorkdayAutofill:
             previous_work_xpath = '//text()[contains(.,"former")]/following::input[2]'
 
         # instructions List of ordered steps :
-        # a list of (Action, HTML Xpath, Value, options..)
+        # a list of (Action, HTML Xpath, Value, options ...)
         # options is not required
         instructions = [
             # How Did You Hear About Us
-            PageStep(),
-            ("LOCATE_DROPDOWN_AND_FILL", '//text()[contains(., "How Did You Hear About Us?")]/following::input[1]',
-             self.resume_data["my-information"]["source"]),
+            (PageStep(action="LOCATE_AND_FILL",
+                      params=['//div//text()[contains(., "How Did You Hear About Us?")]'
+                              '/following::input[1]',
+                              self.resume_data["my-information"]["source"]],
+                      options={"press_enter": True})),
             # Previous work
-            ("LOCATE_AND_CLICK", previous_work_xpath),
+            PageStep(action="LOCATE_AND_CLICK",
+                     params=[previous_work_xpath]),
             # Country
-            ("LOCATE_DROPDOWN_AND_FILL", '//text()[contains(., "Country")]/following::button[1]',
-             self.resume_data["my-information"]["country"]),
+            PageStep(action="LOCATE_DROPDOWN_AND_FILL",
+                     params=['//div//text()[contains(., "Country")]'
+                             '/following::button[@aria-haspopup="listbox"][1]',
+                             self.resume_data["my-information"]["country"]]),
             # ****** Legal Name ******
             # First Name
-            ("LOCATE_AND_FILL", '//text()[contains(., "First Name")]/following::input[1]',
-             self.resume_data["my-information"]["first-name"]),
+            PageStep(action="LOCATE_AND_FILL",
+                     params=['//div//text()[contains(., "First Name")]'
+                             '/following::input[1]',
+                             self.resume_data["my-information"]["first-name"]]),
             # Last Name
-            ("LOCATE_AND_FILL", '//text()[contains(., "Last Name")]/following::input[1]',
-             self.resume_data["my-information"]["last-name"]),
+            PageStep(action="LOCATE_AND_FILL",
+                     params=['//div//text()[contains(., "Last Name")]'
+                             '/following::input[1]',
+                             self.resume_data["my-information"]["last-name"]]),
             # ****** Address ******
             # Line 1
-            ("LOCATE_AND_FILL", '//text()[contains(., "Address Line 1")]/following::input[1]',
-             self.resume_data["my-information"]["address-line"]),
+            PageStep(action="LOCATE_AND_FILL",
+                     params=['//div[@data-automation-id="addressSection"]'
+                             '//text()[contains(., "Address Line 1")]'
+                             '/following::input[1]',
+                             self.resume_data["my-information"]["address-line"]]),
             # City
-            ("LOCATE_AND_FILL", '//text()[contains(., "City")]/following::input[1]',
-             self.resume_data["my-information"]["city"]),
+            PageStep(action="LOCATE_AND_FILL",
+                     params=['//div[@data-automation-id="addressSection"]'
+                             '//text()[contains(., "City")]'
+                             '/following::input[1]',
+                             self.resume_data["my-information"]["city"]]),
             # State
-            ("LOCATE_DROPDOWN_AND_FILL", '//text()[contains(., "State")]/following::button[1]',
-             self.resume_data["my-information"]["state"]),
+            PageStep(action="LOCATE_DROPDOWN_AND_FILL",
+                     params=['//div[@data-automation-id="addressSection"]'
+                             '//text()[contains(., "State")]'
+                             '/following::button[@aria-haspopup="listbox"][1]',
+                             self.resume_data["my-information"]["state"]]),
             # Zip
-            ("LOCATE_AND_FILL", '//text()[contains(., "Postal Code")]/following::input[1]',
-             self.resume_data["my-information"]["zip"]),
+            PageStep(action="LOCATE_AND_FILL",
+                     params=['//div[@data-automation-id="addressSection"]'
+                             '//text()[contains(., "Postal Code")]'
+                             '/following::input[1]',
+                             self.resume_data["my-information"]["zip"]]),
+
             # ****** Phone ******
             # Device Type
-            ("LOCATE_DROPDOWN_AND_FILL", '//text()[contains(., "Phone Device Type")]/following::button[1]',
-             self.resume_data["my-information"]["phone-device-type"]),
+            PageStep(action="LOCATE_DROPDOWN_AND_FILL",
+                     params=['//div//text()[contains(., "Phone Device Type")]'
+                             '/following::button[@aria-haspopup="listbox"][1]',
+                             self.resume_data["my-information"]["phone-device-type"]]),
             # Phone Code
-            ("LOCATE_AND_FILL",
-             '//text()[contains(., "Country Phone Code")]/following::input[1]',
-             self.resume_data["my-information"]["phone-code-country"],
-             True),
+            PageStep(action="LOCATE_AND_FILL",
+                     params=['//div//text()[contains(., "Country Phone Code")]/following::input[1]',
+                             self.resume_data["my-information"]["phone-code-country"]],
+                     options={'press_enter': True}),
             # Number
-            ("LOCATE_AND_FILL", '//text()[contains(., "Phone Number")]/following::input[1]',
-             self.resume_data["my-information"]["phone-number"]),
+            PageStep(action="LOCATE_AND_FILL",
+                     params=['//div//text()[contains(., "Phone Number")]/following::input[1]',
+                             self.resume_data["my-information"]["phone-number"]]),
             # Extension
-            ("LOCATE_AND_FILL", '//text()[contains(., "Phone Extension")]/following::input[1]',
-             self.resume_data["my-information"]["phone-extension"]),
-            # Submit
-            ("LOCATE_AND_CLICK", '//button[contains(text(),"Save and Continue")]'),
+            PageStep(action="LOCATE_AND_FILL",
+                     params=['//div//text()[contains(., "Phone Extension")]'
+                             '/following::input[1]',
+                             self.resume_data["my-information"]["phone-extension"]]),
+            # # Submit
+            PageStep(action="LOCATE_AND_CLICK",
+                     params=['//div//button[contains(text(),"Save and Continue")]']),
         ]
 
         self.execute_instructions(instructions)
 
     def add_works(self, instructions):
         # check if there are work experiences
-        if not check_generator_is_empty(self.load_work_experiences()):
+        if len(self.load_work_experiences()):
             # click ADD button
-            instructions.append(
-                ("LOCATE_AND_CLICK",
-                 '//text()[contains(.,"Work Experience")]/following::button[contains(text(),"Add")][1]')
-            )
+            instructions.append(PageStep(action="LOCATE_AND_CLICK",
+                     params=['//button[@aria-label="Add Work Experience" and @data-automation-id="Add"]']))
             # fill work experiences
             works_count = len(self.load_work_experiences())
             for idx, work in enumerate(self.load_work_experiences(), start=1):
                 instructions += [
                     # Job title
-                    ("LOCATE_AND_FILL",
-                     f'//text()[contains(.,"Work Experience {idx}")]'
-                     f'/following::text()[contains(.,"Job Title")]/following::Input[1]',
-                     work["job-title"]),
+                    PageStep(action="LOCATE_AND_FILL",
+                             params=[f'//text()[contains(.,"Work Experience {idx}")]'
+                                     f'/following::text()[contains(.,"Job Title")]'
+                                     f'/following::Input[1]',
+                                     work["job-title"]]),
                     # Company
-                    ("LOCATE_AND_FILL",
-                     f'//text()[contains(.,"Work Experience {idx}")]'
-                     f'/following::text()[contains(.,"Company")]/following::Input[1]',
-                     work["company"]),
+                    PageStep(action="LOCATE_AND_FILL",
+                             params=[f'//text()[contains(.,"Work Experience {idx}")]'
+                                     f'/following::text()[contains(.,"Company")]'
+                                     f'/following::Input[1]',
+                                     work["company"]]),
                     # Location
-                    ("LOCATE_AND_FILL",
-                     f'//text()[contains(.,"Work Experience {idx}")]'
-                     f'/following::text()[contains(.,"Location")]/following::Input[1]',
-                     work["location"]),
+                    PageStep(action="LOCATE_AND_FILL",
+                             params=[f'//text()[contains(.,"Work Experience {idx}")]'
+                                     f'/following::text()[contains(.,"Location")]/following::Input[1]',
+                                     work["location"]]),
                     # From Date
-                    ("LOCATE_AND_FILL",
-                     f'//text()[contains(.,"Work Experience {idx}")]'
-                     f'/following::text()[contains(.,"To")]'
-                     f'/following::input[contains(@aria-valuetext, "MM") or contains(@aria-valuetext, "YYYY") ]',
-                     work["from"]),
+                    PageStep(action="LOCATE_AND_FILL",
+                             params=[f'//text()[contains(.,"Work Experience {idx}")]'
+                                     f'/following::text()[contains(.,"From")]'
+                                     f'/following::input[contains(@aria-valuetext, "MM") '
+                                     f'or contains(@aria-valuetext, "YYYY")][1]',
+                                     work["from"]]),
                     # Description
-                    ("LOCATE_AND_FILL",
-                     f'//text()[contains(.,"Work Experience {idx}")]'
-                     f'/following::text()[contains(.,"Role Description")]'
-                     f'/following::textarea[1]',
-                     work["description"]),
+                    PageStep(action="LOCATE_AND_FILL",
+                             params=[f'//text()[contains(.,"Work Experience {idx}")]'
+                                     f'/following::text()[contains(.,"Role Description")]'
+                                     f'/following::textarea[1]',
+                                     work["description"]])
                 ]
                 # Current work
                 if not work["current-work"]:
                     # To Date
-                    instructions += [("LOCATE_AND_FILL",
-                                      f'//text()[contains(.,"Work Experience {idx}")]'
-                                      '/following::text()[contains(.,"To")]'
-                                      '/following::input[contains(@aria-valuetext, "MM") or '
-                                      'contains(@aria-valuetext, "YYYY") ]', work["to"])]
+                    instructions.append(PageStep(action="LOCATE_AND_FILL",
+                                                 params=[f'//text()[contains(.,"Work Experience {idx}")]'
+                                                         '/following::text()[contains(.,"To")]'
+                                                         '/following::input[contains(@aria-valuetext, "MM") or '
+                                                         'contains(@aria-valuetext, "YYYY") ][1]', work["to"]]))
+
                 else:
                     instructions.append(
-                        ("LOCATE_AND_CLICK",
-                         f'//text()[contains(.,"Work Experience {idx}")]'
-                         '//text()[contains(.,"I currently work here")]',
-                         '/following:input[1]')
+                        PageStep(action="LOCATE_AND_CLICK",
+                                 params=[f'//text()[contains(.,"Work Experience {idx}")]'
+                                         '/following::text()[contains(.,"I currently work here")]'
+                                         '/following::input[1]']),
                     )
                 # check if more work experiences remaining
                 if not idx == works_count:
                     # Add another
                     instructions.append(
-                        ("LOCATE_AND_CLICK",
-                         f'//text()[contains(.,"Work Experience {idx}")]'
-                         '/following::button[contains(text(),"Add Another")]')
+                        PageStep(action="LOCATE_AND_CLICK",
+                                 params=[f'//div//text()[contains(.,"Work Experience {idx}")]'
+                                         '/following::button[contains(text(),"Add Another")]']),
                     )
         return instructions
 
     def add_education(self, instructions):
         # check if there are education experiences
-        if not check_generator_is_empty(self.load_education_experiences()):
+        if len(self.load_education_experiences()):
             # click add button if not initialized
             instructions.append(
-                ("LOCATE_AND_CLICK",
-                 '//text()[contains(.,"Education")]/following::button[contains(text(),"Add")][1]')
+                PageStep(action="LOCATE_AND_CLICK",
+                         params=['//text()[contains(.,"Education")]'
+                                 '/following::button[contains(text(),"Add")][1]'])
             )
+
             # fill work experiences
             educations_count = len(self.load_education_experiences())
             for idx, education in enumerate(self.load_education_experiences(), start=1):
                 instructions += [
                     # School or University
-                    (
-                        "LOCATE_AND_FILL",
-                        f'//div[@data-automation-id="education-{idx}"]//input[@data-automation-id="school"]',
-                        education["university"]),
+                    PageStep(action="LOCATE_AND_FILL",
+                             params=[f'//text()[contains(.,"Education {idx}")]'
+                                     f'/following::text()[contains(.,"School or University")]'
+                                     f'/following::input[1]',
+                                     education["university"]]),
                     # Degree
-                    (
-                        "LOCATE_AND_FILL",
-                        f'//div[@data-automation-id="education-{idx}"]//button[@data-automation-id="degree"]',
-                        education["degree"]),
+                    PageStep(action="LOCATE_AND_FILL",
+                             params=[f'//text()[contains(.,"Education {idx}")]'
+                                     f'/following::text()[contains(.,"Degree")]'
+                                     f'/following::button[1]',
+                                     education["degree"]]),
                     # Field of study
-                    ("LOCATE_AND_FILL",
-                     f'//div[@data-automation-id="education-{idx}"]//input[@placeholder="Search"]',
-                     education["field-of-study"],
-                     True
-                     ),
+                    PageStep(action="LOCATE_AND_FILL",
+                             params=[f'//text()[contains(.,"Education {idx}")]'
+                                     f'/following::text()[contains(.,"Field of Study")]'
+                                     f'/following::input[1]',
+                                     education["field-of-study"]],
+                             options={"press_enter": True}),
                     # Gpa
-                    ("LOCATE_AND_FILL",
-                     f'//div[@data-automation-id="education-{idx}"]'
-                     '//input[@data-automation-id="gpa"]',
-                     education["gpa"]),
+                    PageStep(action="LOCATE_AND_FILL",
+                             params=[f'//text()[contains(.,"Education {idx}")]'
+                                     '/following::text()[contains(.,"Overall Result")]/'
+                                     'following::input[1]',
+                                     education["gpa"]]),
                     # From date
-                    ("LOCATE_AND_FILL", f'//div[@data-automation-id="education-{idx}"]'
-                                        '//input[@data-automation-id="dateSectionYear-input" '
-                                        'and contains(@aria-valuetext, "YYYY")]',
-                     education["from"]),
+                    PageStep(action="LOCATE_AND_FILL",
+                             params=[f'//text()[contains(.,"Education {idx}")]'
+                                     '/following::text()[contains(.,"From")]/'
+                                     'following::input[contains(@aria-valuetext, "MM")'
+                                     ' or contains(@aria-valuetext, "YYYY") ][1]',
+                                     education["from"]]),
+
                     # To date
-                    ("LOCATE_AND_FILL",
-                     f'//div[@data-automation-id="education-{idx}"]'
-                     f'//input[@data-automation-id="dateSectionYear-input" and contains(@aria-valuetext, "YYYY")]',
-                     education["to"]),
+                    PageStep(action="LOCATE_AND_FILL",
+                             params=[f'//text()[contains(.,"Education {idx}")]'
+                                     f'/following::text()[contains(.,"To")]'
+                                     f'/following::input[contains(@aria-valuetext, "MM")'
+                                     f' or contains(@aria-valuetext, "YYYY") ][1]',
+                                     education["to"]]),
                 ]
+
                 # check if more education experiences remaining
                 if not idx == educations_count:
                     # Add another
-                    instructions.append(
-                        ("LOCATE_AND_CLICK",
-                         '//button[@data-automation-id="Add Another" and @aria-label="Add Another Education"]')
-                    )
+                    instructions.append(PageStep(action="LOCATE_AND_CLICK",
+                                                 params=[f'//text()[contains(.,"Education {idx}")]'
+                                                         f'/following::button[contains(text(),"Add Another")][1]']))
         return instructions
 
     def add_languages(self, instructions):
-        if not check_generator_is_empty(self.load_languages()):
+        if len(self.load_languages()):
             # click ADD button
             instructions.append(
-                ("LOCATE_AND_CLICK", '//button[@aria-label="Add Languages" and @data-automation-id="Add"]')
+                PageStep(action="LOCATE_AND_CLICK",
+                         params=['//text()[contains(.,"Languages")]'
+                                 '/following::button[contains(text(),"Add")][1]'])
             )
-            # fill work experiences
+            # fill Languages
             languages_count = len(self.load_languages())
             for idx, language in enumerate(self.load_languages(), start=1):
                 # Fluent ?
                 if language["fluent"]:
-                    instructions += [("LOCATE_AND_CLICK",
-                                      f'//div[@data-automation-id="language-{idx}"]'
-                                      f'//input[@data-automation-id="nativeLanguage"]')]
+                    instructions.append(
+                        PageStep(action="LOCATE_AND_CLICK",
+                                 params=[f'//text()[contains(.,"Languages {idx}")]'
+                                         f'/following::text()[contains(.,"I am fluent in this language")]'
+                                         f'/following::input[1]']))
                 instructions += [
                     # Language
-                    ("LOCATE_DROPDOWN_AND_FILL",
-                     f'//div[@data-automation-id="language-{idx}"]//button[@data-automation-id="language"]',
-                     language["language"], True),
-                    # Comprehension
-                    ("LOCATE_DROPDOWN_AND_FILL",
-                     f'//div[@data-automation-id="language-{idx}"]//button[@data-automation-id="languageProficiency-0"]',
-                     language["comprehension"], True),
-                    # Overall
-                    ("LOCATE_DROPDOWN_AND_FILL",
-                     f'//div[@data-automation-id="language-{idx}"]//button[@data-automation-id="languageProficiency-1"]',
-                     language["overall"], True),
+                    PageStep(action="LOCATE_DROPDOWN_AND_FILL",
+                             params=[f'//text()[contains(.,"Languages {idx}")]'
+                                     f'/following::text()[contains(.,"Language")]'
+                                     f'/following::button[1]',
+                                     language["language"]],
+                             options={"value_is_pattern": True}),
                     # Reading
-                    ("LOCATE_DROPDOWN_AND_FILL",
-                     f'//div[@data-automation-id="language-{idx}"]//button[@data-automation-id="languageProficiency-2"]',
-                     language["reading"], True),
+                    PageStep(action="LOCATE_DROPDOWN_AND_FILL",
+                             params=[f'/following::text()[contains(.,"Reading Proficiency")]'
+                                     f'/following::button[1]',
+                                     language["comprehension"]],
+                             options={"value_is_pattern": True}),
                     # Speaking
-                    ("LOCATE_DROPDOWN_AND_FILL",
-                     f'//div[@data-automation-id="language-{idx}"]//button[@data-automation-id="languageProficiency-3"]',
-                     language["speaking"], True),
+                    PageStep(action="LOCATE_DROPDOWN_AND_FILL",
+                             params=[f'/following::text()[contains(.,"Speaking Proficiency")]'
+                                     f'/following::button[1]',
+                                     language["overall"]],
+                             options={"value_is_pattern": True}),
+                    # Translation
+                    PageStep(action="LOCATE_DROPDOWN_AND_FILL",
+                             params=[f'/following::text()[contains(.,"Translation")]'
+                                     f'/following::button[1]',
+                                     language["reading"]],
+                             options={"value_is_pattern": True}),
                     # Writing
-                    ("LOCATE_DROPDOWN_AND_FILL",
-                     f'//div[@data-automation-id="language-{idx}"]//button[@data-automation-id="languageProficiency-4"]',
-                     language["writing"], True),
+                    PageStep(action="LOCATE_DROPDOWN_AND_FILL",
+                             params=[f'/following::text()[contains(.,"Writing Proficiency")]'
+                                     f'/following::button[1]',
+                                     language["writing"]],
+                             options={"value_is_pattern": True}),
                 ]
 
                 # check if more languages remaining
                 if not idx == languages_count:
                     # Add another
                     instructions.append(
-                        ("LOCATE_AND_CLICK",
-                         '//button[@data-automation-id="Add Another" and @aria-label="Add Another Languages"]')
+                        PageStep(action="LOCATE_AND_CLICK",
+                                 params=[f'//text()[contains(.,"Languages {idx}")]'
+                                         f'/following::button[contains(text(),"Add")][1]']),
                     )
         return instructions
 
     def add_resume(self, instructions):
         instructions.append(
-            ("LOCATE_AND_UPLOAD",
-             '//input[@data-automation-id="file-upload-input-ref"]',
-             self.resume_data["my-experience"]["resume"])
+            PageStep(action="LOCATE_AND_FILL",
+                     params=['//input[@data-automation-id="file-upload-input-ref"]',
+                             self.resume_data["my-experience"]["resume"]]),
         )
         return instructions
 
@@ -437,29 +508,37 @@ class WorkdayAutofill:
         if websites_count:
             # click ADD button
             instructions.append(
-                ("LOCATE_AND_CLICK", '//button[@aria-label="Add Websites" and @data-automation-id="Add"]')
+                PageStep(action="LOCATE_AND_CLICK",
+                         params=['//text()[contains(.,"Websites")]'
+                                 '/following::button[contains(text(),"Add")]']),
+
             )
             # fill websites
             for idx, website in enumerate(self.resume_data["my-experience"]["websites"], start=1):
                 instructions += [
                     # Website
-                    ("LOCATE_AND_FILL",
-                     f'//div[@data-automation-id="websitePanelSet-{idx}"]//input[@data-automation-id="website"]',
-                     website),
+                    PageStep(action="LOCATE_AND_CLICK",
+                             params=[
+                                 f'//div[@data-automation-id="websitePanelSet-{idx}"]'
+                                 f'//input[@data-automation-id="website"]',
+                                 website])
                 ]
                 # check if more languages remaining
                 if not idx == websites_count:
                     # Add another
                     instructions.append(
-                        ("LOCATE_AND_CLICK",
-                         '//button[@data-automation-id="Add Another" and @aria-label="Add Another Websites"]')
+                        PageStep(action="LOCATE_AND_CLICK",
+                                 params=[
+                                     '//button[@data-automation-id="Add Another"'
+                                     ' and @aria-label="Add Another Websites"]'])
                     )
-        return instructions
+            # Save and continue
+            instructions.append(
+                PageStep(action="LOCATE_AND_CLICK",
+                         params=[
+                             '//button[contains(text(),"Save and Continue")]'])
+            )
 
-    def save_and_continue(self, instructions):
-        instructions.append(
-            ("LOCATE_AND_CLICK", '//button[@data-automation-id="bottom-navigation-next-button"]')
-        )
         return instructions
 
     def fill_my_experience_page(self):
@@ -467,10 +546,9 @@ class WorkdayAutofill:
         steps = {
             "WORKS": self.add_works,
             "EDUCATION": self.add_education,
-            "LANGUAGES": self.add_languages,
+            # "LANGUAGES": self.add_languages,
             "RESUME": self.add_resume,
-            "WEBSITES": self.add_websites,
-            "SAVE_AND_CONTINUE": self.save_and_continue
+            # "WEBSITES": self.add_websites,
         }
         for step_name, action in steps.items():
             print(f"[INFO] adding {step_name}")

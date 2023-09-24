@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "workday-application-automation"
+version = "0.1.0"
+description = ""
+authors = ["Aimene Ahdibi <ahdibiaymen@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+selenium = "^4.12.0"
+pyyaml = "^6.0.1"
+webdriver-manager = "^4.0.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
