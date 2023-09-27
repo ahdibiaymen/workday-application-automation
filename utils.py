@@ -1,3 +1,6 @@
+from selenium.webdriver import Keys
+
+
 def str2bool(v):
     return v.lower() in ("yes", "true", "t", "1")
 
@@ -19,3 +22,34 @@ def check_element_text_is_empty(element):
         pass
     else:
         return is_empty
+
+
+def convert_strdate_to_numbpad_keys(str_date):
+    keys_list = []
+    for element in str_date:
+        try:
+            number = int(element)
+            if number == 0:
+                keys_list.append(Keys.NUMPAD0)
+            elif number == 1:
+                keys_list.append(Keys.NUMPAD1)
+            elif number == 2:
+                keys_list.append(Keys.NUMPAD2)
+            elif number == 3:
+                keys_list.append(Keys.NUMPAD3)
+            elif number == 4:
+                keys_list.append(Keys.NUMPAD4)
+            elif number == 5:
+                keys_list.append(Keys.NUMPAD5)
+            elif number == 6:
+                keys_list.append(Keys.NUMPAD6)
+            elif number == 7:
+                keys_list.append(Keys.NUMPAD7)
+            elif number == 8:
+                keys_list.append(Keys.NUMPAD8)
+            elif number == 9:
+                keys_list.append(Keys.NUMPAD9)
+        except ValueError:
+            continue
+
+    return keys_list

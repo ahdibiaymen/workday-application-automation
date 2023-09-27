@@ -9,7 +9,7 @@ from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from utils import check_element_text_is_empty
+from utils import check_element_text_is_empty, convert_strdate_to_numbpad_keys
 import yaml
 
 from webdrivers_installer import install_web_driver
@@ -89,6 +89,8 @@ class WorkdayAutofill:
                              f" -> please review the languages order !")
 
     def locate_and_fill(self, element_xpath, input_data, kwoptions):
+        if not input_data:
+            return
         try:
             element = WebDriverWait(self.driver, self.ELEMENT_WAITING_TIMEOUT).until(
                 EC.presence_of_element_located((By.XPATH, element_xpath)))
@@ -102,10 +104,13 @@ class WorkdayAutofill:
             if kwoptions.get("only_if_empty") and not check_element_text_is_empty(element):
                 # quit if the element is already filled
                 return
-            if input_data:
-                if "input" in element_xpath:
-                    self.driver.execute_script(
-                        'arguments[0].value="";', element)
+            # fill date MM/YYYY
+            if "YYYY" in element_xpath:
+                date_keys = convert_strdate_to_numbpad_keys(input_data)
+                element.send_keys(date_keys)
+            else:
+                self.driver.execute_script(
+                    'arguments[0].value="";', element)
                 element.send_keys(input_data)
             if kwoptions.get("press_enter"):
                 element.send_keys(Keys.ENTER)
@@ -122,7 +127,7 @@ class WorkdayAutofill:
             self.driver.execute_script("arguments[0].click();", element)
             element.send_keys(input_data)
             if kwoptions.get("value_is_pattern"):
-                select_xpath = f'//div[contains(text(),"{input_data}")'
+                select_xpath = f'//div[contains(text(),"{input_data}")]'
             else:
                 select_xpath = f'//div[text()="{input_data}"]'
             try:
@@ -307,7 +312,8 @@ class WorkdayAutofill:
         if len(self.load_work_experiences()):
             # click ADD button
             instructions.append(PageStep(action="LOCATE_AND_CLICK",
-                     params=['//button[@aria-label="Add Work Experience" and @data-automation-id="Add"]']))
+                                         params=[
+                                             '//button[@aria-label="Add Work Experience" and @data-automation-id="Add"]']))
             # fill work experiences
             works_count = len(self.load_work_experiences())
             for idx, work in enumerate(self.load_work_experiences(), start=1):
@@ -390,11 +396,14 @@ class WorkdayAutofill:
                                      f'/following::input[1]',
                                      education["university"]]),
                     # Degree
-                    PageStep(action="LOCATE_AND_FILL",
+                    PageStep(action="LOCATE_DROPDOWN_AND_FILL",
                              params=[f'//text()[contains(.,"Education {idx}")]'
                                      f'/following::text()[contains(.,"Degree")]'
                                      f'/following::button[1]',
-                                     education["degree"]]),
+                                     education["degree"]],
+                             options={
+                                 "value_is_pattern": True
+                             }),
                     # Field of study
                     PageStep(action="LOCATE_AND_FILL",
                              params=[f'//text()[contains(.,"Education {idx}")]'
