@@ -32,8 +32,7 @@ class WorkdayAutofill:
         self.driver = WorkdayAutofill.create_webdriver("chrome")
         self.resume_data = self.load_resume()
         self.current_url = None
-        self.ELEMENT_WAITING_TIMEOUT = 5
-        self.IMPLICIT_FILLING_WAIT = 3
+        self.ELEMENT_WAITING_TIMEOUT = 2
 
     @classmethod
     def create_webdriver(cls, browser_name):
@@ -91,55 +90,66 @@ class WorkdayAutofill:
     def locate_and_fill(self, element_xpath, input_data, kwoptions):
         if not input_data:
             return
-        try:
-            element = WebDriverWait(self.driver, self.ELEMENT_WAITING_TIMEOUT).until(
-                EC.presence_of_element_located((By.XPATH, element_xpath)))
-        except (selenium_exceptions.NoSuchElementException, selenium_exceptions.TimeoutException):
-            if not kwoptions.get("required"):
-                return
-            raise RuntimeError(
-                f"Cannot locate element '{element_xpath}' in the following page : {self.driver.current_url}"
-            )
-        else:
-            if kwoptions.get("only_if_empty") and not check_element_text_is_empty(element):
-                # quit if the element is already filled
-                return
-            # fill date MM/YYYY
-            if "YYYY" in element_xpath:
-                date_keys = convert_strdate_to_numbpad_keys(input_data)
-                element.send_keys(date_keys)
-            else:
-                self.driver.execute_script(
-                    'arguments[0].value="";', element)
-                element.send_keys(input_data)
-            if kwoptions.get("press_enter"):
-                element.send_keys(Keys.ENTER)
-
-    def locate_dropdown_and_fill(self, element_xpath, input_data, kwoptions):
-        try:
-            element = WebDriverWait(self.driver, self.ELEMENT_WAITING_TIMEOUT).until(
-                EC.presence_of_element_located((By.XPATH, element_xpath)))
-        except (selenium_exceptions.NoSuchElementException, selenium_exceptions.TimeoutException):
-            raise RuntimeError(
-                f"Cannot locate element '{element_xpath}' in the following page : {self.driver.current_url}"
-            )
-        else:
-            self.driver.execute_script("arguments[0].click();", element)
-            element.send_keys(input_data)
-            if kwoptions.get("value_is_pattern"):
-                select_xpath = f'//div[contains(text(),"{input_data}")]'
-            else:
-                select_xpath = f'//div[text()="{input_data}"]'
+        if not kwoptions.get("required"):
             try:
-                choice = WebDriverWait(self.driver, self.ELEMENT_WAITING_TIMEOUT).until(
-                    EC.presence_of_element_located((By.XPATH, select_xpath)))
+                element = self.driver.find_element(By.XPATH, element_xpath)
+            except selenium_exceptions.NoSuchElementException:
+                # skip if element is not in the page
+                return
+        else:
+            try:
+                element = WebDriverWait(self.driver, self.ELEMENT_WAITING_TIMEOUT).until(
+                    EC.presence_of_element_located((By.XPATH, element_xpath)))
             except (selenium_exceptions.NoSuchElementException, selenium_exceptions.TimeoutException):
                 raise RuntimeError(
-                    f"Cannot locate option: >'{input_data}'< in the following drop down : {element_xpath}"
-                    " Check your resume data"
+                    f"Cannot locate element '{element_xpath}' in the following page : {self.driver.current_url}"
                 )
-            else:
-                self.driver.execute_script("arguments[0].click();", choice)
+        if kwoptions.get("only_if_empty") and not check_element_text_is_empty(element):
+            # quit if the element is already filled
+            return
+        # fill date MM/YYYY
+        if "YYYY" in element_xpath:
+            date_keys = convert_strdate_to_numbpad_keys(input_data)
+            element.send_keys(date_keys)
+        else:
+            self.driver.execute_script(
+                'arguments[0].value="";', element)
+            element.send_keys(input_data)
+        if kwoptions.get("press_enter"):
+            element.send_keys(Keys.ENTER)
+
+    def locate_dropdown_and_fill(self, element_xpath, input_data, kwoptions):
+        if not kwoptions.get("required"):
+            try:
+                element = self.driver.find_element(By.XPATH, element_xpath)
+            except selenium_exceptions.NoSuchElementException:
+                # skip if element is not in the page
+                return
+        else:
+            try:
+                element = WebDriverWait(self.driver, self.ELEMENT_WAITING_TIMEOUT).until(
+                    EC.presence_of_element_located((By.XPATH, element_xpath)))
+            except (selenium_exceptions.NoSuchElementException, selenium_exceptions.TimeoutException):
+                raise RuntimeError(
+                    f"Cannot locate element '{element_xpath}' in the following page : {self.driver.current_url}"
+                )
+
+        self.driver.execute_script("arguments[0].click();", element)
+        element.send_keys(input_data)
+        if kwoptions.get("value_is_pattern"):
+            select_xpath = f'//div[contains(text(),"{input_data}")]'
+        else:
+            select_xpath = f'//div[text()="{input_data}"]'
+        try:
+            choice = WebDriverWait(self.driver, self.ELEMENT_WAITING_TIMEOUT).until(
+                EC.presence_of_element_located((By.XPATH, select_xpath)))
+        except (selenium_exceptions.NoSuchElementException, selenium_exceptions.TimeoutException):
+            raise RuntimeError(
+                f"Cannot locate option: >'{input_data}'< in the following drop down : {element_xpath}"
+                " Check your resume data"
+            )
+        else:
+            self.driver.execute_script("arguments[0].click();", choice)
 
     def locate_and_click(self, button_xpath):
         try:
@@ -196,18 +206,26 @@ class WorkdayAutofill:
                                    f" called with params : {page_step.params} \n "
                                    f"and options : {page_step.options} ")
 
-    def login(self, email, password):
+    def login(self):
         email_xpath = '//text()[contains(.,"Email Address")]/following::input[1]'
         password_xpath = '//text()[contains(.,"Password")]/following::input[@data-automation-id="password"][1]'
         submit_xpath = '//div[contains(@aria-label,"Sign In")]'
-
+        email = self.resume_data["account"]["email"],
+        password = self.resume_data["account"]["password"]
         self.execute_instructions([
             # locate email input & fill
             PageStep(action="LOCATE_AND_FILL",
-                     params=[email_xpath, email]),
+                     params=[email_xpath, email],
+                     options={
+                         "required": True
+                     }),
             # locate password input & fill
             PageStep(action="LOCATE_AND_FILL",
-                     params=[password_xpath, password])
+                     params=[password_xpath, password],
+                     options={
+                         "required": True
+                     }
+                     )
         ])
 
         # submit
@@ -442,7 +460,28 @@ class WorkdayAutofill:
                                                          f'/following::button[contains(text(),"Add Another")][1]']))
         return instructions
 
+    def add_resume(self, instructions):
+        instructions.append(
+            PageStep(action="LOCATE_AND_FILL",
+                     params=['//input[@data-automation-id="file-upload-input-ref"]',
+                             self.resume_data["my-experience"]["resume"]]),
+        )
+        return instructions
+
+    def check_section_exist(self, section_name):
+        try:
+            xpath = f'//h3[contains(text(),"{section_name}")]'
+            element = self.driver.find_element(By.XPATH, xpath)
+        except (selenium_exceptions.NoSuchElementException, selenium_exceptions.TimeoutException):
+            print(f"[INFO] Skipping section {section_name} because it doesn't exist")
+            return False
+        else:
+            return bool(element)
+
     def add_languages(self, instructions):
+        # CHECK IF LANGUAGES SECTION EXIST
+        if not self.check_section_exist("Languages"):
+            return instructions
         if len(self.load_languages()):
             # click ADD button
             instructions.append(
@@ -504,15 +543,10 @@ class WorkdayAutofill:
                     )
         return instructions
 
-    def add_resume(self, instructions):
-        instructions.append(
-            PageStep(action="LOCATE_AND_FILL",
-                     params=['//input[@data-automation-id="file-upload-input-ref"]',
-                             self.resume_data["my-experience"]["resume"]]),
-        )
-        return instructions
-
     def add_websites(self, instructions):
+        if not self.check_section_exist("Websites"):
+            return instructions
+
         websites_count = len(self.resume_data["my-experience"]["websites"])
         if websites_count:
             # click ADD button
@@ -555,9 +589,9 @@ class WorkdayAutofill:
         steps = {
             "WORKS": self.add_works,
             "EDUCATION": self.add_education,
-            # "LANGUAGES": self.add_languages,
+            "LANGUAGES": self.add_languages,
             "RESUME": self.add_resume,
-            # "WEBSITES": self.add_websites,
+            "WEBSITES": self.add_websites,
         }
         for step_name, action in steps.items():
             print(f"[INFO] adding {step_name}")
@@ -568,16 +602,19 @@ class WorkdayAutofill:
     def start_application(self):
         self.driver.get(self.application_link)
 
-        self.login(
-            self.resume_data["account"]["email"],
-            self.resume_data["account"]["password"]
-        )
-
-        self.fill_my_information_page()
-        self.fill_my_experience_page()
-
-        # exit
-        # self.driver.quit()
+        application_steps = [
+            self.login,
+            self.fill_my_information_page,
+            self.fill_my_experience_page
+        ]
+        steps_count = len(application_steps)
+        for idx, step in enumerate(application_steps):
+            step()
+            if idx != steps_count - 1:
+                # waiting time for page switch
+                self.driver.implicitly_wait(3.0)
+    # exit
+    # self.driver.quit()
 
 
 if __name__ == '__main__':

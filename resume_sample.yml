@@ -1,0 +1,97 @@
+account:
+  email:
+  password:
+
+my-information:
+  source:
+  previous-work:
+  country:
+  first-name:
+  last-name:
+  address-line:
+  city:
+  state:
+  zip:
+  phone-device-type:
+  phone-code-country:
+  phone-number:
+  phone-extension:
+
+my-experience:
+  work-experiences:
+    - work1:
+        job-title:
+        company:
+        location:
+        current-work:
+        from: mm/yyyy
+        to: mm/yyyy
+        description: |
+          - aa
+          - bb
+    - work2:
+        job-title:
+        company:
+        location:
+        current-work:
+        from: mm/yyyy
+        to: mm/yyyy
+        description: |
+          - aa
+          - bb
+    - work3:
+        job-title:
+        company:
+        location:
+        current-work:
+        from: mm/yyyy
+        to: mm/yyyy
+        description: |
+          - aa
+          - bb
+
+  education-experiences:
+    - education1:
+        university:
+        degree:
+        field-of-study:
+        gpa:
+        from: YYYY
+        to: YYYY
+    - education2:
+        university:
+        degree:
+        field-of-study:
+        gpa:
+        from: YYYY
+        to: YYYY
+    - education3:
+        university:
+        degree:
+        field-of-study:
+        gpa:
+        from: YYYY
+        to: YYYY
+  languages:
+    - language1:
+        language:
+        fluent: true | false
+        comprehension:
+        overall:
+        reading:
+        speaking:
+        writing:
+    - language2:
+        language:
+        fluent: true | false
+        comprehension:
+        overall:
+        reading:
+        speaking:
+        writing:
+  resume: /tmp/hello.png
+  websites:
+    - link1
+    - https://github.com/ahdibiaymen/
+
+
