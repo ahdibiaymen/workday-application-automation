@@ -9,7 +9,9 @@ from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from utils import check_element_text_is_empty, convert_strdate_to_numbpad_keys
+from utils import (check_element_text_is_empty,
+                   convert_strdate_to_numbpad_keys,
+                   today_date_in_keys)
 import yaml
 
 from webdrivers_installer import install_web_driver
@@ -87,15 +89,22 @@ class WorkdayAutofill:
             raise ValueError("Something went wrong while parsing your resume.yml LANGUAGES"
                              f" -> please review the languages order !")
 
+    def load_additional_information(self):
+        try:
+            return self.resume_data["additional-information"]
+        except KeyError:
+            raise ValueError("Something went wrong while parsing your resume.yml LANGUAGES"
+                             f" -> please review the additional-information key !")
+
     def locate_and_fill(self, element_xpath, input_data, kwoptions):
         if not input_data:
-            return
+            return False
         if not kwoptions.get("required"):
             try:
                 element = self.driver.find_element(By.XPATH, element_xpath)
             except selenium_exceptions.NoSuchElementException:
                 # skip if element is not in the page
-                return
+                return False
         else:
             try:
                 element = WebDriverWait(self.driver, self.ELEMENT_WAITING_TIMEOUT).until(
@@ -106,7 +115,7 @@ class WorkdayAutofill:
                 )
         if kwoptions.get("only_if_empty") and not check_element_text_is_empty(element):
             # quit if the element is already filled
-            return
+            return False
         # fill date MM/YYYY
         if "YYYY" in element_xpath:
             date_keys = convert_strdate_to_numbpad_keys(input_data)
@@ -117,6 +126,7 @@ class WorkdayAutofill:
             element.send_keys(input_data)
         if kwoptions.get("press_enter"):
             element.send_keys(Keys.ENTER)
+        return True
 
     def locate_dropdown_and_fill(self, element_xpath, input_data, kwoptions):
         if not kwoptions.get("required"):
@@ -124,7 +134,7 @@ class WorkdayAutofill:
                 element = self.driver.find_element(By.XPATH, element_xpath)
             except selenium_exceptions.NoSuchElementException:
                 # skip if element is not in the page
-                return
+                return False
         else:
             try:
                 element = WebDriverWait(self.driver, self.ELEMENT_WAITING_TIMEOUT).until(
@@ -150,17 +160,21 @@ class WorkdayAutofill:
             )
         else:
             self.driver.execute_script("arguments[0].click();", choice)
+            return True
 
-    def locate_and_click(self, button_xpath):
+    def locate_and_click(self, button_xpath, kwoptions):
         try:
             clickable_element = WebDriverWait(self.driver, self.ELEMENT_WAITING_TIMEOUT).until(
                 EC.presence_of_element_located((By.XPATH, button_xpath)))
         except (selenium_exceptions.NoSuchElementException, selenium_exceptions.TimeoutException):
+            if not kwoptions.get("required"):
+                return False
             raise RuntimeError(
                 f"Cannot locate submit button '{button_xpath}' in the following page : {self.driver.current_url}"
             )
         else:
             self.driver.execute_script("arguments[0].click();", clickable_element)
+            return True
 
     def locate_and_upload(self, button_xpath, file_location):
         try:
@@ -172,6 +186,7 @@ class WorkdayAutofill:
             )
         else:
             element.send_keys(file_location)
+            return True
 
     def locate_and_drag_drop(self, element1_xpath, element2_xpath):
         try:
@@ -187,24 +202,28 @@ class WorkdayAutofill:
         else:
             action = ActionChains(self.driver)
             action.drag_and_drop(element1, element2).perform()
+            return True
 
     def execute_instructions(self, instructions):
-        for page_step in instructions:
+        for idx, page_step in enumerate(instructions):
 
             if page_step.action == "LOCATE_AND_FILL":
-                self.locate_and_fill(*page_step.params, page_step.options)
+                status = self.locate_and_fill(*page_step.params, page_step.options)
             elif page_step.action == "LOCATE_AND_CLICK":
-                self.locate_and_click(*page_step.params)
+                status = self.locate_and_click(*page_step.params, page_step.options)
             elif page_step.action == "LOCATE_DROPDOWN_AND_FILL":
-                self.locate_dropdown_and_fill(*page_step.params, page_step.options)
+                status = self.locate_dropdown_and_fill(*page_step.params, page_step.options)
             elif page_step.action == "LOCATE_AND_UPLOAD":
-                self.locate_and_upload(*page_step.params, page_step.options)
+                status = self.locate_and_upload(*page_step.params, page_step.options)
             elif page_step.action == "LOCATE_AND_DRAG_DROP":
-                self.locate_and_drag_drop(*page_step.params, page_step.options)
+                status = self.locate_and_drag_drop(*page_step.params, page_step.options)
             else:
                 raise RuntimeError(f"Unknown instruction: {page_step.action} \n"
                                    f" called with params : {page_step.params} \n "
                                    f"and options : {page_step.options} ")
+            # remove the element if he got filled
+            if status:
+                instructions.pop(idx)
 
     def login(self):
         email_xpath = '//text()[contains(.,"Email Address")]/following::input[1]'
@@ -461,11 +480,14 @@ class WorkdayAutofill:
         return instructions
 
     def add_resume(self, instructions):
-        instructions.append(
+        instructions += [
+            # delete the old resume if exist
+            PageStep(action="LOCATE_AND_CLICK",
+                     params=['//button[@data-automation-id="delete-file"]']),
             PageStep(action="LOCATE_AND_FILL",
                      params=['//input[@data-automation-id="file-upload-input-ref"]',
                              self.resume_data["my-experience"]["resume"]]),
-        )
+        ]
         return instructions
 
     def check_section_exist(self, section_name):
@@ -599,13 +621,124 @@ class WorkdayAutofill:
 
         self.execute_instructions(instructions=instructions)
 
+    def fill_my_additional_information(self):
+        if self.check_application_review_reached():
+            print("[INFO] Application completed ! click submit")
+        else:
+            print("[INFO] Please complete the required information and ")
+        # fill the available information until it reach review page
+        information = self.load_additional_information()
+        instructions = [
+            # 18 yo ?
+            PageStep(action="LOCATE_DROPDOWN_AND_FILL",
+                     params=[f'//text()[contains(.,"Are you at least 18")]'
+                             f'/following::button[1]',
+                             information["above-18-year"]]),
+            # high school or GED ?
+            PageStep(action="LOCATE_DROPDOWN_AND_FILL",
+                     params=[f'//text()[contains(.,"Do you have a high school")]'
+                             f'/following::button[1]',
+                             information["high-school-diploma"]]),
+            # authorized to work ?
+            PageStep(action="LOCATE_DROPDOWN_AND_FILL",
+                     params=[f'//text()[contains(.,"authorized to work")]'
+                             f'/following::button[1]',
+                             information["work-authorization"]]),
+            # visa sponsorship ?
+            PageStep(action="LOCATE_DROPDOWN_AND_FILL",
+                     params=[f'//text()[contains(.,"sponsorship")]'
+                             f'/following::button[1]',
+                             information["visa-sponsorship"]]),
+            # Serving military ?
+            PageStep(action="LOCATE_DROPDOWN_AND_FILL",
+                     params=[f'//text()[contains(.,"Have you served")]'
+                             f'/following::button[1]',
+                             information["served-military"]]),
+            # military spouse ?
+            PageStep(action="LOCATE_DROPDOWN_AND_FILL",
+                     params=[f'//text()[contains(.,"former military spouse")]'
+                             f'/following::button[1]',
+                             information["military-spouse"]]),
+            # Protected veteran
+            PageStep(action="LOCATE_DROPDOWN_AND_FILL",
+                     params=[f'//text()[contains(.,"Protected Veteran")]'
+                             f'/following::button[1]',
+                             information["protected-veteran"]]),
+            # ethnicity
+            PageStep(action="LOCATE_DROPDOWN_AND_FILL",
+                     params=[f'//text()[contains(.,"ethnicity category")]'
+                             f'/following::button[1]',
+                             information["ethnicity"]]),
+            # Gender / self identification
+            PageStep(action="LOCATE_DROPDOWN_AND_FILL",
+                     params=[f'//text()[contains(.,"Gender")]'
+                             f'/following::button[1]',
+                             information["self-identification"]]),
+
+            # Accept Terms ?
+            PageStep(action="LOCATE_DROPDOWN_AND_FILL"
+                     , params=[f'//text()[contains(.,"I have read and consent")]'
+                               f'/following::input[1]',
+                               information["accept-terms"]]),
+            ## SELF Identify
+            # Language
+            PageStep(action="LOCATE_DROPDOWN_AND_FILL",
+                     params=[f'//h2[contains(text(),"Self Identify")]'
+                             f'/following::text()[contains(.,"Language")]'
+                             f'/following::button[1]',
+                             information["language"]]),
+            # Name
+            PageStep(action="LOCATE_DROPDOWN_AND_FILL",
+                     params=[f'//h2[contains(text(),"Self Identify")]'
+                             f'/following::text()[contains(.,"Name")]'
+                             f'/following::input[1]',
+                             self.resume_data["my-information"]["first-name"] +
+                             " " +
+                             self.resume_data["my-information"]["last-name"]
+                             ]),
+            # Today's Date
+            PageStep(action="LOCATE_DROPDOWN_AND_FILL",
+                     params=[f'//h2[contains(text(),"Self Identify")]'
+                             f'/following::text()[contains(.,"Date")]'
+                             f'/following::input[1]',
+                             today_date_in_keys()]),
+
+            # Disability
+            PageStep(action="LOCATE_DROPDOWN_AND_FILL",
+                     params=[f'//h2[contains(text(),"Self Identify")]'
+                             f'/following::label[contains(text(),"No")]'
+                             f'/preceding::input[1]',
+                             information["disability"]]),
+        ]
+
+        self.execute_instructions(instructions=instructions)
+
+    def check_application_review_reached(self):
+        try:
+            xpath = '//h2[contains(text(),"Review")]'
+            element = self.driver.find_element(By.XPATH, xpath)
+        except selenium_exceptions.NoSuchElementException:
+            return False
+        else:
+            return bool(element)
+
+    def check_errors_in_page(self):
+        try:
+            xpath = '//div[contains(text(),"Error")]'
+            element = self.driver.find_element(By.XPATH, xpath)
+        except selenium_exceptions.NoSuchElementException:
+            return False
+        else:
+            return bool(element)
+
     def start_application(self):
         self.driver.get(self.application_link)
 
         application_steps = [
             self.login,
             self.fill_my_information_page,
-            self.fill_my_experience_page
+            self.fill_my_experience_page,
+            self.fill_my_additional_information,
         ]
         steps_count = len(application_steps)
         for idx, step in enumerate(application_steps):
@@ -613,6 +746,7 @@ class WorkdayAutofill:
             if idx != steps_count - 1:
                 # waiting time for page switch
                 self.driver.implicitly_wait(3.0)
+
     # exit
     # self.driver.quit()
 
@@ -625,5 +759,4 @@ if __name__ == '__main__':
         resume_path=RESUME_PATH
     )
     s.start_application()
-    # s.driver.quit()
     print("hello")

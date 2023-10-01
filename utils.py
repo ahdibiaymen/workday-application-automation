@@ -1,3 +1,4 @@
+from datetime import datetime
 from selenium.webdriver import Keys
 
 
@@ -53,3 +54,13 @@ def convert_strdate_to_numbpad_keys(str_date):
             continue
 
     return keys_list
+
+
+def today_date_in_keys():
+    today_date = datetime.now().date()
+    date_str = (str(today_date.month) +
+                "/" +
+                str(today_date.month) +
+                "/" +
+                str(today_date.day))
+    return convert_strdate_to_numbpad_keys(date_str)

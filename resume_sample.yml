@@ -94,4 +94,18 @@ my-experience:
     - link1
     - https://github.com/ahdibiaymen/
 
+additional-information:
+  - work-authorization: Yes
+  - visa-sponsorship: No
+  - above-18-year: Yes
+  - high-school-diploma: Yes
+  - served-military: No
+  - military-spouse: No
+  - protected-veteran: I am not
+  - self-identification: Male
+  - accept-terms: true
+  - ethnicity: White
+  - language: English
+  - disability: No
+
 
